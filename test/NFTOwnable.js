@@ -33,17 +33,18 @@ contract("NFTOwnable", function (accounts) {
 
   });
 
-  it("shoud allow NFTOwnable to transfer its own ownership", async function () {
+  it("shoud allow NFTOwnable to transfer its own ownership before activation", async function () {
+    await nftownable.transferOwnership(newOwner);
+    assert.equal( await nftownable.owner(), newOwner );        
+  });
+
+  it("shoud prevent NFTOwnable to transfer its own ownership after activation", async function () {
 
     await nftownable.activate();
 
-    await nftownable.transferOwnership(newOwner);
-
-    assert.equal( await nftownable.owner(), newOwner );        
-
-    let _ownershipAddress = await nftownable.ownership();
-    let _ownership = new ERC721Ownership(_ownershipAddress);
-    assert.equal( await _ownership.ownerOf(1), newOwner ); 
+    await expectRevert( nftownable.transferOwnership(newOwner),
+      "NFTOwnable: cannot transfer ownership directly once activated. Use the ownership token"
+    );
   });
 
   it("shoud allow ERC721Ownership to transfer ownership of the NFTOwnable contract", async function () {
@@ -56,7 +57,6 @@ contract("NFTOwnable", function (accounts) {
 
     assert.equal( await _ownership.ownerOf(1), newOwner ); 
     assert.equal( await nftownable.owner(), newOwner ); 
-
 
   });   
 

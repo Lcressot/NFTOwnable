@@ -6,46 +6,50 @@ import './Ownable.sol'; // lasted version of openzeppelin Ownable
 import '@openzeppelin/contracts/token/ERC721/ERC721.sol';
 
 
+/**
+ * @dev Module to make the ownership of a smart contract a tradable ERC721 token
+ * NOTE: This module should only be deployed by a contract implementing NFTOwnable
+ */ 
 contract ERC721Ownership is ERC721{
     uint constant NFT_ID = 1;
-    NFTOwnable public ownedContract;
-    bool private _initialized;
+    NFTOwnable public _ownedContract;
     
-    constructor() ERC721("ERC721Ownership", "OWN") {
-        ownedContract = NFTOwnable(msg.sender);        
-        _mint(address(ownedContract), NFT_ID);
-        _initialized=true;
+    /**
+     * @dev Mint the single token of the contract to the initial owner at deployment
+     */    
+    constructor(address initialOwner) ERC721("ERC721Ownership", "OWN") {
+        _mint(initialOwner, NFT_ID);
+        _ownedContract = NFTOwnable(msg.sender);                
+    }
+
+    function ownedContract() external view returns (address){
+        return address(_ownedContract);
     }
 
     /**
-     * @dev Transfer of the token causes transfer of the ownership of ownedContract
+     * @dev Transfer of the token also causes transfer of the ownership of _ownedContract
      */
-    function _transfer(
+    function _beforeTokenTransfer(
         address from,
         address to,
         uint256 tokenId
-    ) internal virtual override {
-        require(tokenId==1, "ERC721Ownership: must be tokenId 1");
-        require( ownedContract.owner() == from, "ERC721Ownership: transfer of token that is not own");
+    ) internal override {
         require(to != address(0), "ERC721Ownership: transfer to the zero address");
-
-        _beforeTokenTransfer(from, to, tokenId);
-
-        emit Transfer(from, to, tokenId);
-
-        ownedContract.ownershipTransfer(to); // transfers the contract instead of the NFT
-    }
-
-    function ownerOf(uint256 tokenId) public view virtual override returns (address) {
-        require(tokenId==1, "ERC721Ownership: must be tokenId 1");
-        return ownedContract.owner();
-    }    
+        if(address(_ownedContract)!=address(0)){
+            _ownedContract.ownershipTransfer(to);
+        }
+    }  
 
 }
 
+
+/**
+ * @dev Module to make the ownership of a smart contract a tradable ERC721 token
+ * NOTE: inheriting from this module and calling activate() will make the ownership
+ * of a contract a ERC721 token.
+ */ 
 contract NFTOwnable is Ownable{
     ERC721Ownership private _ownership;
-    bool private _activated;
 
     constructor(){
         // cannot activate in constructor because address(this) must be set
@@ -53,34 +57,42 @@ contract NFTOwnable is Ownable{
 
     // activate to allow NFT trading
     function activate() external onlyOwner{
-         _activate();
+        require(!activated(), 'NFTOwnable: already activated');
+        _ownership = new ERC721Ownership(owner());
     }
 
-    function activated() external view returns (bool){
-        return _activated;
-    }
-
-    function _activate() internal {
-        require(!_activated, 'NFTOwnable: already activated');
-        _ownership = new ERC721Ownership();
-         //_ownership.transferFrom(address(this), owner(), 1);
-        _ownership.approve( owner(), 1);         
-        _activated=true;
-    }    
+    function activated() public view returns (bool){
+        return address(_ownership) != address(0);
+    }  
 
     function ownership() public view returns (address){
-        require(_activated, "NFTOwnable: not activated, no ownership yet");
+        require(activated(), "NFTOwnable: not activated, no ownership yet");
         return address(_ownership);
     }
 
     /**
-     * @dev Transfers ownership of the contract to a new account (`newOwner`).
-     * Only callable by _ownership
+     * @dev Transfers ownership of the contract to a new account (`newOwner`) if not activated
+     * Prevent transfering ownership if activated
      */
-    function ownershipTransfer(address newOwner) external {
-        require( address(_ownership)== _msgSender(), "NFTOwnable: caller is not the owner or ownership");        
+    function transferOwnership(address newOwner) public override onlyOwner {
+        if(activated()){
+            revert("NFTOwnable: cannot transfer ownership directly once activated. Use the ownership token");
+        }else{
+            super.transferOwnership(newOwner);
+        }
+    }    
+
+    modifier onlyOwnershipToken(){
+        require( address(_ownership) == _msgSender(), "NFTOwnable: caller is not the owner or ownership");        
+        _;
+    }
+
+    /**
+     * @dev _ownership token transfers ownership of the contract to a new account (`newOwner`).
+     * Only callable by address _ownership
+     */
+    function ownershipTransfer(address newOwner) external onlyOwnershipToken{
         super._transferOwnership(newOwner);
-        _ownership.approve( newOwner, 1);  
     }    
     
 }
